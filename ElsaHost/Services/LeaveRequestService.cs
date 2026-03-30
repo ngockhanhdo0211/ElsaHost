@@ -170,4 +170,28 @@ public class LeaveRequestService : ILeaveRequestService
         await _dbContext.SaveChangesAsync(cancellationToken);
         return (true, "HR xử lý thành công.");
     }
+    public async Task<LeaveRequest> UpdateStatusAsync(UpdateLeaveRequestStatusDto dto, CancellationToken cancellationToken = default)
+    {
+        if (dto.LeaveRequestId <= 0)
+            throw new InvalidOperationException("LeaveRequestId is invalid.");
+
+        if (string.IsNullOrWhiteSpace(dto.Status))
+            throw new InvalidOperationException("Status is required.");
+
+        if (string.IsNullOrWhiteSpace(dto.CurrentStep))
+            throw new InvalidOperationException("CurrentStep is required.");
+
+        var request = await _dbContext.LeaveRequests
+            .FirstOrDefaultAsync(x => x.Id == dto.LeaveRequestId, cancellationToken);
+
+        if (request == null)
+            throw new InvalidOperationException($"Không tìm thấy đơn nghỉ phép với id = {dto.LeaveRequestId}.");
+
+        request.Status = dto.Status.Trim();
+        request.CurrentStep = dto.CurrentStep.Trim();
+        request.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return request;
+    }
 }

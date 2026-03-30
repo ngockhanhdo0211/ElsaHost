@@ -189,7 +189,27 @@ app.MapGet("/api/leave-requests/{id:int}/history", async (
     var history = await leaveRequestService.GetHistoryAsync(id, cancellationToken);
     return Results.Ok(history);
 });
+// Internal API: update leave request status/current step
+app.MapPost("/api/leave-requests/internal/update-status", async (
+    UpdateLeaveRequestStatusDto dto,
+    ILeaveRequestService leaveRequestService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var updatedRequest = await leaveRequestService.UpdateStatusAsync(dto, cancellationToken);
 
+        return Results.Ok(new
+        {
+            message = "Leave request status updated successfully",
+            data = updatedRequest
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+});
 // Manager decision
 app.MapPost("/api/leave-requests/{id:int}/manager-decision", async (
     int id,

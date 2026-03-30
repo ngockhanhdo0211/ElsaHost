@@ -12,4 +12,5 @@ public interface ILeaveRequestService
 
     Task<(bool Success, string Message)> ManagerDecisionAsync(int id, DecisionDto dto, CancellationToken cancellationToken = default);
     Task<(bool Success, string Message)> HrDecisionAsync(int id, DecisionDto dto, CancellationToken cancellationToken = default);
+    Task<LeaveRequest> UpdateStatusAsync(UpdateLeaveRequestStatusDto dto, CancellationToken cancellationToken = default);
 }

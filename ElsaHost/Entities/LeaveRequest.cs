@@ -10,7 +10,7 @@ public class LeaveRequest
     public int TotalDays { get; set; }
 
     public string Status { get; set; } = "PendingManager";
-    public string CurrentStep { get; set; } = "Created";
+    public string CurrentStep { get; set; } = "ManagerApproval";
     public string? WorkflowInstanceId { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
