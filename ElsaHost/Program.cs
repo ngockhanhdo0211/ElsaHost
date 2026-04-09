@@ -10,7 +10,7 @@ using ElsaHost.Models;
 using ElsaHost.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
-
+using Microsoft.AspNetCore.Authorization;
 var builder = WebApplication.CreateBuilder(args);
 
 // Connection string dùng chung cho Elsa + dữ liệu nghiệp vụ seminar.
@@ -51,9 +51,9 @@ builder.Services.AddElsa(elsa =>
     // Identity
     elsa.UseIdentity(identity =>
     {
-        identity.TokenOptions = options =>
+       identity.TokenOptions = options =>
             options.SigningKey = "this-is-a-very-long-development-signing-key-1234567890";
-        identity.UseAdminUserProvider();
+      identity.UseAdminUserProvider();
     });
 
     // Authentication
@@ -94,7 +94,7 @@ app.UseHttpsRedirection();
 
 app.UseCors();
 app.UseRouting();
-
+// Tạm comment khi test local
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -209,7 +209,9 @@ app.MapPost("/api/leave-requests/internal/update-status", async (
     {
         return Results.BadRequest(new { message = ex.Message });
     }
-});
+})
+.AllowAnonymous();
+
 // Manager decision
 app.MapPost("/api/leave-requests/{id:int}/manager-decision", async (
     int id,

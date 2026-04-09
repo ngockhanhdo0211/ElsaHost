@@ -28,17 +28,21 @@ public class LeaveRequestService : ILeaveRequestService
         if (dto.EndDate.Date < dto.StartDate.Date)
             throw new InvalidOperationException("EndDate must be greater than or equal to StartDate.");
 
+        var now = DateTime.UtcNow;
+
         var request = new LeaveRequest
         {
+            EmployeeId = dto.EmployeeName.Trim(),
             EmployeeName = dto.EmployeeName.Trim(),
             StartDate = dto.StartDate.Date,
             EndDate = dto.EndDate.Date,
             Reason = dto.Reason.Trim(),
             TotalDays = totalDays,
             Status = LeaveStatuses.PendingManager,
-            CurrentStep = LeaveSteps.ManagerReview,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CurrentStep = LeaveSteps.ManagerApproval,
+            CurrentApproverRole = "Manager",
+            CreatedAt = now,
+            UpdatedAt = now
         };
 
         _dbContext.LeaveRequests.Add(request);
@@ -48,10 +52,10 @@ public class LeaveRequestService : ILeaveRequestService
         {
             LeaveRequestId = request.Id,
             ApproverRole = "Employee",
-            StepName = LeaveSteps.ManagerReview,
+            StepName = LeaveSteps.ManagerApproval,
             Action = "Submitted",
             Comment = "Leave request created",
-            ActionAt = DateTime.UtcNow
+            ActionAt = now
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -84,8 +88,9 @@ public class LeaveRequestService : ILeaveRequestService
         if (request == null)
             return (false, "Không tìm thấy đơn nghỉ phép.");
 
-        if (!string.Equals(request.Status, LeaveStatuses.PendingManager, StringComparison.OrdinalIgnoreCase))
-            return (false, "Đơn hiện không ở bước Manager review.");
+        if (!string.Equals(request.Status, LeaveStatuses.PendingManager, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(request.Status, LeaveStatuses.ManagerOverdue, StringComparison.OrdinalIgnoreCase))
+            return (false, "Đơn hiện không ở bước Manager approval.");
 
         if (string.IsNullOrWhiteSpace(dto.Action))
             return (false, "Action là bắt buộc. Dùng Approve hoặc Reject.");
@@ -96,12 +101,18 @@ public class LeaveRequestService : ILeaveRequestService
             !string.Equals(action, "Reject", StringComparison.OrdinalIgnoreCase))
             return (false, "Action không hợp lệ. Dùng Approve hoặc Reject.");
 
+        var now = DateTime.UtcNow;
         var isApproved = string.Equals(action, "Approve", StringComparison.OrdinalIgnoreCase);
+
+        request.IsOverdue = false;
 
         if (!isApproved)
         {
             request.Status = LeaveStatuses.Rejected;
             request.CurrentStep = LeaveSteps.Completed;
+            request.CurrentApproverId = null;
+            request.CurrentApproverRole = null;
+            request.RejectedAt = now;
         }
         else
         {
@@ -109,24 +120,29 @@ public class LeaveRequestService : ILeaveRequestService
             {
                 request.Status = LeaveStatuses.Approved;
                 request.CurrentStep = LeaveSteps.Completed;
+                request.CurrentApproverId = null;
+                request.CurrentApproverRole = null;
+                request.ApprovedAt = now;
             }
             else
             {
-                request.Status = LeaveStatuses.PendingHr;
-                request.CurrentStep = LeaveSteps.HrReview;
+                request.Status = LeaveStatuses.PendingHR;
+                request.CurrentStep = LeaveSteps.HrApproval;
+                request.CurrentApproverRole = "HR";
+                request.HrAssignedAt = now;
             }
         }
 
-        request.UpdatedAt = DateTime.UtcNow;
+        request.UpdatedAt = now;
 
         _dbContext.ApprovalHistories.Add(new ApprovalHistory
         {
             LeaveRequestId = request.Id,
             ApproverRole = "Manager",
-            StepName = LeaveSteps.ManagerReview,
+            StepName = LeaveSteps.ManagerApproval,
             Action = isApproved ? "Approved" : "Rejected",
             Comment = dto.Comment,
-            ActionAt = DateTime.UtcNow
+            ActionAt = now
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -139,8 +155,9 @@ public class LeaveRequestService : ILeaveRequestService
         if (request == null)
             return (false, "Không tìm thấy đơn nghỉ phép.");
 
-        if (!string.Equals(request.Status, LeaveStatuses.PendingHr, StringComparison.OrdinalIgnoreCase))
-            return (false, "Đơn hiện không ở bước HR review.");
+        if (!string.Equals(request.Status, LeaveStatuses.PendingHR, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(request.Status, LeaveStatuses.HROverdue, StringComparison.OrdinalIgnoreCase))
+            return (false, "Đơn hiện không ở bước HR approval.");
 
         if (string.IsNullOrWhiteSpace(dto.Action))
             return (false, "Action là bắt buộc. Dùng Approve hoặc Reject.");
@@ -151,25 +168,36 @@ public class LeaveRequestService : ILeaveRequestService
             !string.Equals(action, "Reject", StringComparison.OrdinalIgnoreCase))
             return (false, "Action không hợp lệ. Dùng Approve hoặc Reject.");
 
+        var now = DateTime.UtcNow;
         var isApproved = string.Equals(action, "Approve", StringComparison.OrdinalIgnoreCase);
 
         request.Status = isApproved ? LeaveStatuses.Approved : LeaveStatuses.Rejected;
         request.CurrentStep = LeaveSteps.Completed;
-        request.UpdatedAt = DateTime.UtcNow;
+        request.CurrentApproverId = null;
+        request.CurrentApproverRole = null;
+        request.IsOverdue = false;
+
+        if (isApproved)
+            request.ApprovedAt = now;
+        else
+            request.RejectedAt = now;
+
+        request.UpdatedAt = now;
 
         _dbContext.ApprovalHistories.Add(new ApprovalHistory
         {
             LeaveRequestId = request.Id,
             ApproverRole = "HR",
-            StepName = LeaveSteps.HrReview,
+            StepName = LeaveSteps.HrApproval,
             Action = isApproved ? "Approved" : "Rejected",
             Comment = dto.Comment,
-            ActionAt = DateTime.UtcNow
+            ActionAt = now
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return (true, "HR xử lý thành công.");
     }
+
     public async Task<LeaveRequest> UpdateStatusAsync(UpdateLeaveRequestStatusDto dto, CancellationToken cancellationToken = default)
     {
         if (dto.LeaveRequestId <= 0)
@@ -189,7 +217,45 @@ public class LeaveRequestService : ILeaveRequestService
 
         request.Status = dto.Status.Trim();
         request.CurrentStep = dto.CurrentStep.Trim();
+
+        request.CurrentApproverId = dto.CurrentApproverId;
+        request.CurrentApproverRole = dto.CurrentApproverRole;
+
+        request.ManagerAssignedAt = dto.ManagerAssignedAt ?? request.ManagerAssignedAt;
+        request.ManagerDueAt = dto.ManagerDueAt ?? request.ManagerDueAt;
+
+        request.HrAssignedAt = dto.HrAssignedAt ?? request.HrAssignedAt;
+        request.HrDueAt = dto.HrDueAt ?? request.HrDueAt;
+
+        if (dto.IsOverdue.HasValue)
+            request.IsOverdue = dto.IsOverdue.Value;
+
+        request.LastReminderAt = dto.LastReminderAt ?? request.LastReminderAt;
+        request.ApprovedAt = dto.ApprovedAt ?? request.ApprovedAt;
+        request.RejectedAt = dto.RejectedAt ?? request.RejectedAt;
         request.UpdatedAt = DateTime.UtcNow;
+
+        if (dto.AddHistory)
+        {
+            if (string.IsNullOrWhiteSpace(dto.HistoryApproverRole))
+                throw new InvalidOperationException("HistoryApproverRole is required when AddHistory = true.");
+
+            if (string.IsNullOrWhiteSpace(dto.HistoryStepName))
+                throw new InvalidOperationException("HistoryStepName is required when AddHistory = true.");
+
+            if (string.IsNullOrWhiteSpace(dto.HistoryAction))
+                throw new InvalidOperationException("HistoryAction is required when AddHistory = true.");
+
+            _dbContext.ApprovalHistories.Add(new ApprovalHistory
+            {
+                LeaveRequestId = request.Id,
+                ApproverRole = dto.HistoryApproverRole.Trim(),
+                StepName = dto.HistoryStepName.Trim(),
+                Action = dto.HistoryAction.Trim(),
+                Comment = dto.HistoryComment,
+                ActionAt = DateTime.UtcNow
+            });
+        }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return request;
