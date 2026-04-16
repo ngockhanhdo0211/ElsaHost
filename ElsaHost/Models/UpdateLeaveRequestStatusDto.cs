@@ -23,8 +23,18 @@ public class UpdateLeaveRequestStatusDto
     public DateTime? RejectedAt { get; set; }
 
     public bool AddHistory { get; set; } = false;
+
     public string? HistoryApproverRole { get; set; }
+    public string? HistoryApproverId { get; set; }
+    public string? HistoryApproverName { get; set; }
+
     public string? HistoryStepName { get; set; }
     public string? HistoryAction { get; set; }
     public string? HistoryComment { get; set; }
+
+    public string? HistoryFromStatus { get; set; }
+    public string? HistoryToStatus { get; set; }
+
+    public string? HistoryFromStep { get; set; }
+    public string? HistoryToStep { get; set; }
 }

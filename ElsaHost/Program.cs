@@ -4,13 +4,15 @@ using Elsa.EntityFrameworkCore.Modules.Runtime;
 using Elsa.Extensions;
 using Elsa.Workflows.Runtime;
 using Elsa.Workflows.Runtime.Parameters;
+using Elsa.Workflows.Runtime.Stimuli;
 using ElsaHost;
+using ElsaHost.Activities;
 using ElsaHost.Data;
 using ElsaHost.Models;
 using ElsaHost.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
-using Microsoft.AspNetCore.Authorization;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Connection string dùng chung cho Elsa + dữ liệu nghiệp vụ seminar.
@@ -23,7 +25,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Service nghiệp vụ.
 builder.Services.AddScoped<ILeaveRequestService, LeaveRequestService>();
-
+builder.Services.AddScoped<ILeaveRequestService, LeaveRequestService>();
+builder.Services.AddHostedService<LeaveRequestOverdueWorker>();
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -51,9 +54,9 @@ builder.Services.AddElsa(elsa =>
     // Identity
     elsa.UseIdentity(identity =>
     {
-       identity.TokenOptions = options =>
+        identity.TokenOptions = options =>
             options.SigningKey = "this-is-a-very-long-development-signing-key-1234567890";
-      identity.UseAdminUserProvider();
+        identity.UseAdminUserProvider();
     });
 
     // Authentication
@@ -94,7 +97,6 @@ app.UseHttpsRedirection();
 
 app.UseCors();
 app.UseRouting();
-// Tạm comment khi test local
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -189,6 +191,7 @@ app.MapGet("/api/leave-requests/{id:int}/history", async (
     var history = await leaveRequestService.GetHistoryAsync(id, cancellationToken);
     return Results.Ok(history);
 });
+
 // Internal API: update leave request status/current step
 app.MapPost("/api/leave-requests/internal/update-status", async (
     UpdateLeaveRequestStatusDto dto,
@@ -212,44 +215,90 @@ app.MapPost("/api/leave-requests/internal/update-status", async (
 })
 .AllowAnonymous();
 
-// Manager decision
+// Manager decision - resume workflow
 app.MapPost("/api/leave-requests/{id:int}/manager-decision", async (
     int id,
     DecisionDto dto,
     ILeaveRequestService leaveRequestService,
+    IStimulusSender stimulusSender,
     CancellationToken cancellationToken) =>
 {
-    var result = await leaveRequestService.ManagerDecisionAsync(id, dto, cancellationToken);
+    var result = await leaveRequestService.ValidateManagerDecisionAsync(id, dto, cancellationToken);
 
     if (!result.Success)
         return Results.BadRequest(new { message = result.Message });
+
+    var stimulus = new ManagerDecisionStimulus
+    {
+        LeaveRequestId = id
+    };
+
+    var metadata = new StimulusMetadata
+    {
+        Input = new Dictionary<string, object>
+        {
+            ["Action"] = dto.Action.Trim(),
+            ["Comment"] = dto.Comment ?? string.Empty
+        }
+    };
+
+    await stimulusSender.SendAsync(
+        nameof(WaitForManagerDecisionActivity),
+        stimulus,
+        metadata,
+        cancellationToken);
+
+    await Task.Delay(300, cancellationToken);
 
     var request = await leaveRequestService.GetByIdAsync(id, cancellationToken);
 
     return Results.Ok(new
     {
-        message = result.Message,
+        message = "Manager decision accepted and workflow resumed.",
         data = request
     });
 });
 
-// HR decision
+// HR decision - resume workflow
 app.MapPost("/api/leave-requests/{id:int}/hr-decision", async (
     int id,
     DecisionDto dto,
     ILeaveRequestService leaveRequestService,
+    IStimulusSender stimulusSender,
     CancellationToken cancellationToken) =>
 {
-    var result = await leaveRequestService.HrDecisionAsync(id, dto, cancellationToken);
+    var result = await leaveRequestService.ValidateHrDecisionAsync(id, dto, cancellationToken);
 
     if (!result.Success)
         return Results.BadRequest(new { message = result.Message });
+
+    var stimulus = new HrDecisionStimulus
+    {
+        LeaveRequestId = id
+    };
+
+    var metadata = new StimulusMetadata
+    {
+        Input = new Dictionary<string, object>
+        {
+            ["Action"] = dto.Action.Trim(),
+            ["Comment"] = dto.Comment ?? string.Empty
+        }
+    };
+
+    await stimulusSender.SendAsync(
+        nameof(WaitForHrDecisionActivity),
+        stimulus,
+        metadata,
+        cancellationToken);
+
+    await Task.Delay(300, cancellationToken);
 
     var request = await leaveRequestService.GetByIdAsync(id, cancellationToken);
 
     return Results.Ok(new
     {
-        message = result.Message,
+        message = "HR decision accepted and workflow resumed.",
         data = request
     });
 });
